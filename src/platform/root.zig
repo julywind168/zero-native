@@ -13,6 +13,11 @@ pub const Error = error{
     WindowSourceTooLarge,
     FocusFailed,
     CloseFailed,
+    OverlayNotFound,
+    OverlayLimitReached,
+    DuplicateOverlayLabel,
+    OverlayLabelTooLarge,
+    OverlayUrlTooLarge,
 };
 
 pub const WebEngine = enum {
@@ -56,6 +61,9 @@ pub const max_windows: usize = 16;
 pub const max_window_label_bytes: usize = 64;
 pub const max_window_title_bytes: usize = 128;
 pub const max_window_source_bytes: usize = 4096;
+pub const max_overlays: usize = 16;
+pub const max_overlay_label_bytes: usize = 64;
+pub const max_overlay_url_bytes: usize = 4096;
 
 pub const WindowRestorePolicy = enum {
     clamp_to_visible_screen,
@@ -131,6 +139,13 @@ pub const WindowCreateOptions = struct {
             .restore_policy = self.restore_policy,
         };
     }
+};
+
+pub const OverlayOptions = struct {
+    window_id: WindowId = 1,
+    label: []const u8,
+    url: []const u8,
+    frame: geometry.RectF = geometry.RectF.init(0, 0, 0, 0),
 };
 
 pub const AppInfo = struct {
@@ -282,6 +297,10 @@ pub const PlatformServices = struct {
     create_window_fn: ?*const fn (context: ?*anyopaque, options: WindowOptions) anyerror!WindowInfo = null,
     focus_window_fn: ?*const fn (context: ?*anyopaque, window_id: WindowId) anyerror!void = null,
     close_window_fn: ?*const fn (context: ?*anyopaque, window_id: WindowId) anyerror!void = null,
+    create_overlay_fn: ?*const fn (context: ?*anyopaque, options: OverlayOptions) anyerror!void = null,
+    set_overlay_frame_fn: ?*const fn (context: ?*anyopaque, window_id: WindowId, label: []const u8, frame: geometry.RectF) anyerror!void = null,
+    navigate_overlay_fn: ?*const fn (context: ?*anyopaque, window_id: WindowId, label: []const u8, url: []const u8) anyerror!void = null,
+    close_overlay_fn: ?*const fn (context: ?*anyopaque, window_id: WindowId, label: []const u8) anyerror!void = null,
     show_open_dialog_fn: ?*const fn (context: ?*anyopaque, options: OpenDialogOptions, buffer: []u8) anyerror!OpenDialogResult = null,
     show_save_dialog_fn: ?*const fn (context: ?*anyopaque, options: SaveDialogOptions, buffer: []u8) anyerror!?[]const u8 = null,
     show_message_dialog_fn: ?*const fn (context: ?*anyopaque, options: MessageDialogOptions) anyerror!MessageDialogResult = null,
@@ -338,6 +357,26 @@ pub const PlatformServices = struct {
     pub fn closeWindow(self: PlatformServices, window_id: WindowId) anyerror!void {
         const close_fn = self.close_window_fn orelse return error.UnsupportedService;
         return close_fn(self.context, window_id);
+    }
+
+    pub fn createOverlay(self: PlatformServices, options: OverlayOptions) anyerror!void {
+        const create_fn = self.create_overlay_fn orelse return error.UnsupportedService;
+        return create_fn(self.context, options);
+    }
+
+    pub fn setOverlayFrame(self: PlatformServices, window_id: WindowId, label: []const u8, frame: geometry.RectF) anyerror!void {
+        const set_fn = self.set_overlay_frame_fn orelse return error.UnsupportedService;
+        return set_fn(self.context, window_id, label, frame);
+    }
+
+    pub fn navigateOverlay(self: PlatformServices, window_id: WindowId, label: []const u8, url: []const u8) anyerror!void {
+        const navigate_fn = self.navigate_overlay_fn orelse return error.UnsupportedService;
+        return navigate_fn(self.context, window_id, label, url);
+    }
+
+    pub fn closeOverlay(self: PlatformServices, window_id: WindowId, label: []const u8) anyerror!void {
+        const close_fn = self.close_overlay_fn orelse return error.UnsupportedService;
+        return close_fn(self.context, window_id, label);
     }
 
     pub fn showOpenDialog(self: PlatformServices, options: OpenDialogOptions, buffer: []u8) anyerror!OpenDialogResult {
@@ -415,6 +454,8 @@ pub const NullPlatform = struct {
     window_sources: [max_windows]?WebViewSource = [_]?WebViewSource{null} ** max_windows,
     windows: [max_windows]WindowInfo = undefined,
     window_count: usize = 0,
+    overlays: [max_overlays]NullOverlay = undefined,
+    overlay_count: usize = 0,
     bridge_response: [16 * 1024]u8 = undefined,
     bridge_response_len: usize = 0,
     bridge_response_window_id: WindowId = 0,
@@ -446,6 +487,10 @@ pub const NullPlatform = struct {
                 .create_window_fn = createWindow,
                 .focus_window_fn = focusWindow,
                 .close_window_fn = closeWindow,
+                .create_overlay_fn = createOverlay,
+                .set_overlay_frame_fn = setOverlayFrame,
+                .navigate_overlay_fn = navigateOverlay,
+                .close_overlay_fn = closeOverlay,
                 .configure_security_policy_fn = configureSecurityPolicy,
                 .emit_window_event_fn = emitWindowEvent,
             },
@@ -550,6 +595,47 @@ pub const NullPlatform = struct {
         self.windows[index].focused = false;
     }
 
+    fn createOverlay(context: ?*anyopaque, options: OverlayOptions) anyerror!void {
+        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+        const index = self.findOverlayIndex(options.window_id, options.label) orelse blk: {
+            if (self.overlay_count >= max_overlays) return error.OverlayLimitReached;
+            const next = self.overlay_count;
+            self.overlay_count += 1;
+            break :blk next;
+        };
+        if (options.label.len > max_overlay_label_bytes) return error.OverlayLabelTooLarge;
+        if (options.url.len > max_overlay_url_bytes) return error.OverlayUrlTooLarge;
+        var overlay = &self.overlays[index];
+        overlay.window_id = options.window_id;
+        overlay.frame = options.frame;
+        overlay.open = true;
+        @memcpy(overlay.label_storage[0..options.label.len], options.label);
+        @memcpy(overlay.url_storage[0..options.url.len], options.url);
+        overlay.label = overlay.label_storage[0..options.label.len];
+        overlay.url = overlay.url_storage[0..options.url.len];
+    }
+
+    fn setOverlayFrame(context: ?*anyopaque, window_id: WindowId, label: []const u8, frame: geometry.RectF) anyerror!void {
+        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+        const index = self.findOverlayIndex(window_id, label) orelse return error.OverlayNotFound;
+        self.overlays[index].frame = frame;
+    }
+
+    fn navigateOverlay(context: ?*anyopaque, window_id: WindowId, label: []const u8, url: []const u8) anyerror!void {
+        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+        const index = self.findOverlayIndex(window_id, label) orelse return error.OverlayNotFound;
+        if (url.len > max_overlay_url_bytes) return error.OverlayUrlTooLarge;
+        var overlay = &self.overlays[index];
+        @memcpy(overlay.url_storage[0..url.len], url);
+        overlay.url = overlay.url_storage[0..url.len];
+    }
+
+    fn closeOverlay(context: ?*anyopaque, window_id: WindowId, label: []const u8) anyerror!void {
+        const self: *NullPlatform = @ptrCast(@alignCast(context.?));
+        const index = self.findOverlayIndex(window_id, label) orelse return error.OverlayNotFound;
+        self.overlays[index].open = false;
+    }
+
     fn configureSecurityPolicy(context: ?*anyopaque, policy: security.Policy) anyerror!void {
         const self: *NullPlatform = @ptrCast(@alignCast(context.?));
         self.security_policy = policy;
@@ -569,6 +655,13 @@ pub const NullPlatform = struct {
         return null;
     }
 
+    fn findOverlayIndex(self: *const NullPlatform, window_id: WindowId, label: []const u8) ?usize {
+        for (self.overlays[0..self.overlay_count], 0..) |overlay, index| {
+            if (overlay.window_id == window_id and std.mem.eql(u8, overlay.label, label)) return index;
+        }
+        return null;
+    }
+
     pub fn lastBridgeResponse(self: *const NullPlatform) []const u8 {
         return self.bridge_response[0..self.bridge_response_len];
     }
@@ -576,6 +669,16 @@ pub const NullPlatform = struct {
     pub fn lastBridgeResponseWindowId(self: *const NullPlatform) WindowId {
         return self.bridge_response_window_id;
     }
+};
+
+const NullOverlay = struct {
+    window_id: WindowId = 1,
+    label: []const u8 = "",
+    url: []const u8 = "",
+    frame: geometry.RectF = geometry.RectF.init(0, 0, 0, 0),
+    open: bool = false,
+    label_storage: [max_overlay_label_bytes]u8 = undefined,
+    url_storage: [max_overlay_url_bytes]u8 = undefined,
 };
 
 pub const macos = @import("macos/root.zig");

@@ -47,6 +47,7 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, ZeroNativeBridgeScriptHandler *> *bridgeScriptHandlers;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, ZeroNativeAssetSchemeHandler *> *assetSchemeHandlers;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, NSString *> *windowLabels;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, WKWebView *> *overlayWebViews;
 @property(nonatomic, strong) NSTimer *timer;
 @property(nonatomic, strong) NSString *appName;
 @property(nonatomic, strong) NSString *bundleIdentifier;
@@ -69,6 +70,10 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
 - (void)closeWindowWithId:(uint64_t)windowId;
 - (WKWebView *)webViewForWindowId:(uint64_t)windowId;
 - (ZeroNativeAssetSchemeHandler *)assetHandlerForWindowId:(uint64_t)windowId;
+- (BOOL)createOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url x:(double)x y:(double)y width:(double)width height:(double)height;
+- (BOOL)setOverlayFrameInWindow:(uint64_t)windowId label:(NSString *)label x:(double)x y:(double)y width:(double)width height:(double)height;
+- (BOOL)navigateOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url;
+- (BOOL)closeOverlayInWindow:(uint64_t)windowId label:(NSString *)label;
 - (void)configureApplication;
 - (void)buildMenuBar;
 - (NSMenuItem *)menuItem:(NSString *)title action:(SEL)action key:(NSString *)key modifiers:(NSEventModifierFlags)modifiers;
@@ -218,6 +223,7 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
     self.bridgeScriptHandlers = [[NSMutableDictionary alloc] init];
     self.assetSchemeHandlers = [[NSMutableDictionary alloc] init];
     self.windowLabels = [[NSMutableDictionary alloc] init];
+    self.overlayWebViews = [[NSMutableDictionary alloc] init];
     self.allowedNavigationOrigins = @[ @"zero://app", @"zero://inline" ];
     self.allowedExternalURLs = @[];
     self.externalLinkAction = 0;
@@ -327,6 +333,71 @@ static BOOL ZeroNativePolicyListMatches(NSArray<NSString *> *values, NSURL *url)
 
 - (ZeroNativeAssetSchemeHandler *)assetHandlerForWindowId:(uint64_t)windowId {
     return self.assetSchemeHandlers[@(windowId)] ?: self.assetSchemeHandler;
+}
+
+- (NSString *)overlayKeyForWindow:(uint64_t)windowId label:(NSString *)label {
+    return [NSString stringWithFormat:@"%llu:%@", windowId, label ?: @""];
+}
+
+- (NSRect)overlayFrameForWindow:(NSWindow *)window x:(double)x y:(double)y width:(double)width height:(double)height {
+    NSView *contentView = window.contentView;
+    CGFloat nativeY = contentView.isFlipped ? y : contentView.bounds.size.height - y - height;
+    return NSMakeRect(x, nativeY, width, height);
+}
+
+- (BOOL)createOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url x:(double)x y:(double)y width:(double)width height:(double)height {
+    if (label.length == 0 || url.length == 0) return NO;
+    NSWindow *window = self.windows[@(windowId)] ?: (windowId == 1 ? self.window : nil);
+    if (!window || !window.contentView) return NO;
+    NSURL *targetURL = [NSURL URLWithString:url];
+    if (!targetURL) return NO;
+
+    NSString *key = [self overlayKeyForWindow:windowId label:label];
+    WKWebView *existing = self.overlayWebViews[key];
+    if (existing) {
+        [existing removeFromSuperview];
+        [self.overlayWebViews removeObjectForKey:key];
+    }
+
+    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+    if ([configuration.preferences respondsToSelector:NSSelectorFromString(@"setDeveloperExtrasEnabled:")]) {
+        [configuration.preferences setValue:@YES forKey:@"developerExtrasEnabled"];
+    }
+
+    WKWebView *overlay = [[WKWebView alloc] initWithFrame:[self overlayFrameForWindow:window x:x y:y width:width height:height] configuration:configuration];
+    if ([overlay respondsToSelector:NSSelectorFromString(@"setInspectable:")]) {
+        [overlay setValue:@YES forKey:@"inspectable"];
+    }
+    overlay.autoresizingMask = NSViewNotSizable;
+    [window.contentView addSubview:overlay positioned:NSWindowAbove relativeTo:nil];
+    [overlay loadRequest:[NSURLRequest requestWithURL:targetURL]];
+    self.overlayWebViews[key] = overlay;
+    return YES;
+}
+
+- (BOOL)setOverlayFrameInWindow:(uint64_t)windowId label:(NSString *)label x:(double)x y:(double)y width:(double)width height:(double)height {
+    NSWindow *window = self.windows[@(windowId)] ?: (windowId == 1 ? self.window : nil);
+    WKWebView *overlay = self.overlayWebViews[[self overlayKeyForWindow:windowId label:label]];
+    if (!window || !overlay) return NO;
+    overlay.frame = [self overlayFrameForWindow:window x:x y:y width:width height:height];
+    return YES;
+}
+
+- (BOOL)navigateOverlayInWindow:(uint64_t)windowId label:(NSString *)label url:(NSString *)url {
+    WKWebView *overlay = self.overlayWebViews[[self overlayKeyForWindow:windowId label:label]];
+    NSURL *targetURL = [NSURL URLWithString:url ?: @""];
+    if (!overlay || !targetURL) return NO;
+    [overlay loadRequest:[NSURLRequest requestWithURL:targetURL]];
+    return YES;
+}
+
+- (BOOL)closeOverlayInWindow:(uint64_t)windowId label:(NSString *)label {
+    NSString *key = [self overlayKeyForWindow:windowId label:label];
+    WKWebView *overlay = self.overlayWebViews[key];
+    if (!overlay) return NO;
+    [overlay removeFromSuperview];
+    [self.overlayWebViews removeObjectForKey:key];
+    return YES;
 }
 
 static NSRect constrainFrame(NSRect frame) {
@@ -913,6 +984,32 @@ int zero_native_appkit_close_window(zero_native_appkit_host_t *host, uint64_t wi
     if (!object.windows[@(window_id)]) return 0;
     [object closeWindowWithId:window_id];
     return 1;
+}
+
+int zero_native_appkit_create_overlay(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len, const char *url, size_t url_len, double x, double y, double width, double height) {
+    ZeroNativeAppKitHost *object = (__bridge ZeroNativeAppKitHost *)host;
+    NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
+    NSString *urlString = url ? [[NSString alloc] initWithBytes:url length:url_len encoding:NSUTF8StringEncoding] : @"";
+    return [object createOverlayInWindow:window_id label:labelString ?: @"" url:urlString ?: @"" x:x y:y width:width height:height] ? 1 : 0;
+}
+
+int zero_native_appkit_set_overlay_frame(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len, double x, double y, double width, double height) {
+    ZeroNativeAppKitHost *object = (__bridge ZeroNativeAppKitHost *)host;
+    NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
+    return [object setOverlayFrameInWindow:window_id label:labelString ?: @"" x:x y:y width:width height:height] ? 1 : 0;
+}
+
+int zero_native_appkit_navigate_overlay(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len, const char *url, size_t url_len) {
+    ZeroNativeAppKitHost *object = (__bridge ZeroNativeAppKitHost *)host;
+    NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
+    NSString *urlString = url ? [[NSString alloc] initWithBytes:url length:url_len encoding:NSUTF8StringEncoding] : @"";
+    return [object navigateOverlayInWindow:window_id label:labelString ?: @"" url:urlString ?: @""] ? 1 : 0;
+}
+
+int zero_native_appkit_close_overlay(zero_native_appkit_host_t *host, uint64_t window_id, const char *label, size_t label_len) {
+    ZeroNativeAppKitHost *object = (__bridge ZeroNativeAppKitHost *)host;
+    NSString *labelString = label ? [[NSString alloc] initWithBytes:label length:label_len encoding:NSUTF8StringEncoding] : @"";
+    return [object closeOverlayInWindow:window_id label:labelString ?: @""] ? 1 : 0;
 }
 
 size_t zero_native_appkit_clipboard_read(zero_native_appkit_host_t *host, char *buffer, size_t buffer_len) {
