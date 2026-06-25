@@ -299,7 +299,7 @@ pub const Runtime = struct {
 
     pub fn relayoutShellViews(self: *Runtime, window_id: platform.WindowId) anyerror!void {
         const binding = self.shellLayoutForWindow(window_id) orelse return;
-        try self.applyShellViews(window_id, binding.views, self.shellBoundsForWindow(window_id), .update);
+        try self.applyShellViews(window_id, binding.viewSlice(), self.shellBoundsForWindow(window_id), .update);
     }
 
     fn applyShellViews(self: *Runtime, window_id: platform.WindowId, views: []const app_manifest.ShellView, bounds: geometry.RectF, mode: ShellApplyMode) anyerror!void {
@@ -1144,20 +1144,18 @@ pub const Runtime = struct {
 
     fn bindShellViews(self: *Runtime, window_id: platform.WindowId, views: []const app_manifest.ShellView) !void {
         if (self.findShellLayoutIndex(window_id)) |index| {
-            self.shell_layouts[index].views = views;
+            try self.shell_layouts[index].copyViews(views);
             return;
         }
         if (self.shell_layout_count >= self.shell_layouts.len) return error.WindowLimitReached;
-        self.shell_layouts[self.shell_layout_count] = .{
-            .window_id = window_id,
-            .views = views,
-        };
+        self.shell_layouts[self.shell_layout_count].window_id = window_id;
+        try self.shell_layouts[self.shell_layout_count].copyViews(views);
         self.shell_layout_count += 1;
     }
 
-    fn shellLayoutForWindow(self: *const Runtime, window_id: platform.WindowId) ?RuntimeShellLayout {
+    fn shellLayoutForWindow(self: *const Runtime, window_id: platform.WindowId) ?*const RuntimeShellLayout {
         const index = self.findShellLayoutIndex(window_id) orelse return null;
-        return self.shell_layouts[index];
+        return &self.shell_layouts[index];
     }
 
     fn findShellLayoutIndex(self: *const Runtime, window_id: platform.WindowId) ?usize {
@@ -2564,7 +2562,30 @@ const RuntimeTrayItem = struct {
 
 const RuntimeShellLayout = struct {
     window_id: platform.WindowId = 1,
-    views: []const app_manifest.ShellView = &.{},
+    views: [app_manifest.max_shell_views_per_window]app_manifest.ShellView = undefined,
+    view_count: usize = 0,
+    label_storage: [app_manifest.max_shell_views_per_window][app_manifest.max_view_label_bytes]u8 = undefined,
+    parent_storage: [app_manifest.max_shell_views_per_window][app_manifest.max_view_label_bytes]u8 = undefined,
+
+    fn viewSlice(self: *const RuntimeShellLayout) []const app_manifest.ShellView {
+        return self.views[0..self.view_count];
+    }
+
+    fn copyViews(self: *RuntimeShellLayout, source: []const app_manifest.ShellView) !void {
+        if (source.len > self.views.len) return error.ViewLimitReached;
+        for (source, 0..) |view, index| {
+            var copied = view;
+            copied.label = try copyInto(&self.label_storage[index], view.label);
+            copied.parent = if (view.parent) |parent| try copyInto(&self.parent_storage[index], parent) else null;
+            copied.role = null;
+            copied.accessibility_label = null;
+            copied.url = null;
+            copied.text = null;
+            copied.command = null;
+            self.views[index] = copied;
+        }
+        self.view_count = source.len;
+    }
 };
 
 const ShellApplyMode = enum {
@@ -4448,6 +4469,41 @@ test "runtime relayouts shell views attached to startup window" {
     try std.testing.expectEqual(@as(f32, 470), statusbar.frame.y);
     try std.testing.expectEqual(@as(f32, 900), main.frame.width);
     try std.testing.expectEqual(@as(f32, 420), main.frame.height);
+}
+
+test "runtime relayout uses owned shell view storage" {
+    const TestApp = struct {
+        fn app(self: *@This()) App {
+            return .{ .context = self, .name = "owned-shell-layout", .source = platform.WebViewSource.html("<h1>Owned</h1>") };
+        }
+    };
+
+    var shell_views = [_]app_manifest.ShellView{
+        .{ .label = "toolbar", .kind = .toolbar, .edge = .top, .height = 50 },
+        .{ .label = "main", .kind = .webview, .url = "zero://inline", .fill = true },
+    };
+
+    var harness: TestHarness() = undefined;
+    harness.init(.{ .id = 1, .size = geometry.SizeF.init(800, 600) });
+    var app_state: TestApp = .{};
+    try harness.start(app_state.app());
+    try harness.runtime.createShellViews(1, &shell_views, geometry.RectF.init(0, 0, 800, 600));
+
+    shell_views[0].height = 200;
+
+    try harness.runtime.dispatchPlatformEvent(app_state.app(), .{ .surface_resized = .{
+        .id = 1,
+        .size = geometry.SizeF.init(900, 500),
+        .scale_factor = 1,
+    } });
+
+    var views_buffer: [3]platform.ViewInfo = undefined;
+    const views = harness.runtime.listViews(1, &views_buffer);
+    const toolbar = testViewByLabel(views, "toolbar").?;
+    const main = testViewByLabel(views, "main").?;
+    try std.testing.expectEqual(@as(f32, 50), toolbar.frame.height);
+    try std.testing.expectEqual(@as(f32, 50), main.frame.y);
+    try std.testing.expectEqual(@as(f32, 450), main.frame.height);
 }
 
 test "runtime clamps shell view layout constraints" {

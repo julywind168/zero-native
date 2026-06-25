@@ -33,7 +33,7 @@ pub const max_shortcut_id_bytes: usize = 64;
 pub const max_shortcut_key_bytes: usize = 32;
 pub const max_shell_windows: usize = 16;
 pub const max_shell_views_per_window: usize = 128;
-pub const max_view_label_bytes: usize = 96;
+pub const max_view_label_bytes: usize = 64;
 pub const max_view_role_bytes: usize = 64;
 pub const max_view_accessibility_label_bytes: usize = 256;
 pub const max_command_id_bytes: usize = 128;
@@ -509,7 +509,7 @@ fn validateShellViews(views: []const ShellView) ValidationError!void {
         }
         if (view.parent) |parent| {
             try validateName(parent);
-            if (std.mem.eql(u8, parent, view.label) or !shellViewExists(views, parent)) return error.InvalidLayout;
+            if (std.mem.eql(u8, parent, view.label) or shellViewIndex(views, parent) == null) return error.InvalidLayout;
         }
         if (view.width) |width| if (width <= 0) return error.InvalidDimension;
         if (view.height) |height| if (height <= 0) return error.InvalidDimension;
@@ -539,13 +539,42 @@ fn validateShellViews(views: []const ShellView) ValidationError!void {
         if (view.url) |url| try validateViewUrl(url);
         if (view.kind == .webview and view.url == null) return error.MissingRequiredField;
     }
+    try validateShellViewParentGraph(views);
 }
 
-fn shellViewExists(views: []const ShellView, label: []const u8) bool {
-    for (views) |view| {
-        if (std.mem.eql(u8, view.label, label)) return true;
+const ShellViewVisitState = enum {
+    unvisited,
+    visiting,
+    visited,
+};
+
+fn validateShellViewParentGraph(views: []const ShellView) ValidationError!void {
+    var states = [_]ShellViewVisitState{.unvisited} ** max_shell_views_per_window;
+    for (views, 0..) |_, index| {
+        try validateShellViewParentAcyclic(views, index, &states);
     }
-    return false;
+}
+
+fn validateShellViewParentAcyclic(views: []const ShellView, index: usize, states: *[max_shell_views_per_window]ShellViewVisitState) ValidationError!void {
+    switch (states[index]) {
+        .visited => return,
+        .visiting => return error.InvalidLayout,
+        .unvisited => {},
+    }
+
+    states[index] = .visiting;
+    if (views[index].parent) |parent| {
+        const parent_index = shellViewIndex(views, parent) orelse return error.InvalidLayout;
+        try validateShellViewParentAcyclic(views, parent_index, states);
+    }
+    states[index] = .visited;
+}
+
+fn shellViewIndex(views: []const ShellView, label: []const u8) ?usize {
+    for (views, 0..) |view, index| {
+        if (std.mem.eql(u8, view.label, label)) return index;
+    }
+    return null;
 }
 
 pub fn validateShortcuts(shortcuts: []const Shortcut) ValidationError!void {
@@ -1121,6 +1150,27 @@ test "manifest validates shell windows and views" {
         .identity = .{ .id = "com.example.app", .name = "example" },
         .version = .{ .major = 1, .minor = 0, .patch = 0 },
         .shell = .{ .windows = &orphan_window },
+    }));
+
+    const cyclic_views = [_]ShellView{
+        .{ .label = "first", .kind = .stack, .parent = "second" },
+        .{ .label = "second", .kind = .stack, .parent = "first" },
+    };
+    const cyclic_window = [_]ShellWindow{.{ .views = &cyclic_views }};
+    try std.testing.expectError(error.InvalidLayout, validateManifest(.{
+        .identity = .{ .id = "com.example.app", .name = "example" },
+        .version = .{ .major = 1, .minor = 0, .patch = 0 },
+        .shell = .{ .windows = &cyclic_window },
+    }));
+
+    const too_long_label = "012345678901234567890123456789012345678901234567890123456789abcde";
+    try std.testing.expectEqual(@as(usize, max_view_label_bytes + 1), too_long_label.len);
+    const too_long_label_views = [_]ShellView{.{ .label = too_long_label, .kind = .label, .text = "Too long" }};
+    const too_long_label_window = [_]ShellWindow{.{ .views = &too_long_label_views }};
+    try std.testing.expectError(error.InvalidName, validateManifest(.{
+        .identity = .{ .id = "com.example.app", .name = "example" },
+        .version = .{ .major = 1, .minor = 0, .patch = 0 },
+        .shell = .{ .windows = &too_long_label_window },
     }));
 
     const invalid_constraints_views = [_]ShellView{.{ .label = "content", .kind = .webview, .url = "zero://app/index.html", .min_width = 400, .max_width = 320 }};
