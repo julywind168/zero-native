@@ -9,6 +9,7 @@ This example shows guarded OS capabilities from trusted WebView code:
 - Message dialogs.
 - Credential set, get, and delete.
 - File-drop events delivered to Zig and the WebView event bridge.
+- File association and custom URL scheme packaging metadata.
 - App activation and deactivation events.
 
 Run with the system backend:

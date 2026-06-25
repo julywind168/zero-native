@@ -18,7 +18,21 @@
         "clipboard",
         "credentials",
         "file_drops",
+        "file_associations",
+        "url_schemes",
         "app_activation_events",
+    },
+    .file_associations = .{
+        .{
+            .name = "zero-native Capability Document",
+            .role = "viewer",
+            .extensions = .{ "zncap" },
+            .mime_types = .{ "application/vnd.zero-native.capability+json" },
+            .icon = "assets/icon.icns",
+        },
+    },
+    .url_schemes = .{
+        .{ .scheme = "zero-native-capabilities" },
     },
     .shell = .{
         .windows = .{

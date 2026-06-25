@@ -1,8 +1,12 @@
 const std = @import("std");
 const runner = @import("runner");
 const zero_native = @import("zero-native");
+const app_manifest = @import("app_manifest_zon");
 
 pub const panic = std.debug.FullPanic(zero_native.debug.capturePanic);
+
+const manifest_file_associations = if (@hasField(@TypeOf(app_manifest), "file_associations")) app_manifest.file_associations else .{};
+const manifest_url_schemes = if (@hasField(@TypeOf(app_manifest), "url_schemes")) app_manifest.url_schemes else .{};
 
 const window_width: f32 = 900;
 const window_height: f32 = 620;
@@ -203,6 +207,18 @@ test "capabilities bridge gates native services and dispatches file drops" {
     try harness.runtime.dispatchPlatformEvent(app, .app_deactivated);
     try std.testing.expectEqual(@as(u32, 1), app_state.deactivation_count);
     try std.testing.expectEqualStrings("app:deactivate", harness.null_platform.lastWindowEventName());
+}
+
+test "capabilities manifest declares package integration metadata" {
+    try std.testing.expectEqual(@as(usize, 1), manifest_file_associations.len);
+    try std.testing.expectEqualStrings("zero-native Capability Document", manifest_file_associations[0].name);
+    try std.testing.expectEqualStrings("viewer", manifest_file_associations[0].role);
+    try std.testing.expectEqualStrings("zncap", manifest_file_associations[0].extensions[0]);
+    try std.testing.expectEqualStrings("application/vnd.zero-native.capability+json", manifest_file_associations[0].mime_types[0]);
+    try std.testing.expectEqualStrings("assets/icon.icns", manifest_file_associations[0].icon);
+
+    try std.testing.expectEqual(@as(usize, 1), manifest_url_schemes.len);
+    try std.testing.expectEqualStrings("zero-native-capabilities", manifest_url_schemes[0].scheme);
 }
 
 fn dispatchBridge(harness: *zero_native.TestHarness(), app: zero_native.App, bytes: []const u8) !void {

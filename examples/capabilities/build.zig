@@ -72,14 +72,17 @@ pub fn build(b: *std.Build) void {
     options.addOption(bool, "js_bridge", js_bridge_enabled);
     const options_mod = options.createModule();
 
+    const manifest_mod = b.createModule(.{ .root_source_file = b.path("app.zon") });
+
     const runner_mod = localModule(b, target, optimize, "src/runner.zig");
     runner_mod.addImport("zero-native", zero_native_mod);
     runner_mod.addImport("build_options", options_mod);
-    runner_mod.addImport("app_manifest_zon", b.createModule(.{ .root_source_file = b.path("app.zon") }));
+    runner_mod.addImport("app_manifest_zon", manifest_mod);
 
     const app_mod = localModule(b, target, optimize, "src/main.zig");
     app_mod.addImport("zero-native", zero_native_mod);
     app_mod.addImport("runner", runner_mod);
+    app_mod.addImport("app_manifest_zon", manifest_mod);
     const exe = b.addExecutable(.{
         .name = app_exe_name,
         .root_module = app_mod,
