@@ -929,6 +929,32 @@ test "windows supports native container and control kinds" {
     try std.testing.expect(!isSupportedNativeViewKind(.gpu_surface));
 }
 
+test "windows chromium reports unsupported native surfaces" {
+    var system = testPlatformWithEngine(.system);
+    try std.testing.expect(WindowsPlatform.supportsFeature(&system, .main_webview));
+    try std.testing.expect(WindowsPlatform.supportsFeature(&system, .child_webviews));
+    try std.testing.expect(WindowsPlatform.supportsFeature(&system, .native_views));
+    try std.testing.expect(WindowsPlatform.supportsFeature(&system, .native_control_commands));
+    try std.testing.expect(WindowsPlatform.supportsFeature(&system, .menus));
+
+    var chromium = testPlatformWithEngine(.chromium);
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .main_webview));
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .child_webviews));
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .native_views));
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .native_control_commands));
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .menus));
+    try std.testing.expect(!WindowsPlatform.supportsFeature(&chromium, .shortcuts));
+}
+
+fn testPlatformWithEngine(web_engine: platform_mod.WebEngine) WindowsPlatform {
+    return .{
+        .host = undefined,
+        .web_engine = web_engine,
+        .app_info = .{},
+        .surface_value = .{},
+    };
+}
+
 fn viewKindInt(kind: platform_mod.ViewKind) c_int {
     return switch (kind) {
         .webview => 0,

@@ -942,6 +942,33 @@ test "linux supports native container and control kinds" {
     try std.testing.expect(!isSupportedNativeViewKind(.gpu_surface));
 }
 
+test "linux chromium reports unsupported native surfaces" {
+    var system = testPlatformWithEngine(.system);
+    try std.testing.expect(LinuxPlatform.supportsFeature(&system, .main_webview));
+    try std.testing.expect(LinuxPlatform.supportsFeature(&system, .child_webviews));
+    try std.testing.expect(LinuxPlatform.supportsFeature(&system, .native_views));
+    try std.testing.expect(LinuxPlatform.supportsFeature(&system, .native_control_commands));
+    try std.testing.expect(LinuxPlatform.supportsFeature(&system, .menus));
+
+    var chromium = testPlatformWithEngine(.chromium);
+    try std.testing.expect(LinuxPlatform.supportsFeature(&chromium, .main_webview));
+    try std.testing.expect(LinuxPlatform.supportsFeature(&chromium, .shortcuts));
+    try std.testing.expect(!LinuxPlatform.supportsFeature(&chromium, .child_webviews));
+    try std.testing.expect(!LinuxPlatform.supportsFeature(&chromium, .native_views));
+    try std.testing.expect(!LinuxPlatform.supportsFeature(&chromium, .native_control_commands));
+    try std.testing.expect(!LinuxPlatform.supportsFeature(&chromium, .menus));
+    try std.testing.expect(!LinuxPlatform.supportsFeature(&chromium, .dialogs));
+}
+
+fn testPlatformWithEngine(web_engine: platform_mod.WebEngine) LinuxPlatform {
+    return .{
+        .host = undefined,
+        .web_engine = web_engine,
+        .app_info = .{},
+        .surface_value = .{},
+    };
+}
+
 fn viewKindInt(kind: platform_mod.ViewKind) c_int {
     return switch (kind) {
         .webview => 0,
