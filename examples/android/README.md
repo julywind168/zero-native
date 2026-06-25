@@ -40,6 +40,7 @@ Install on an emulator or device:
 ## Host lifecycle
 
 - `onCreate` loads the JNI library, creates the native shell, then starts the zero-native app.
+- `onResume` and `onPause` forward activation lifecycle with `zero_native_app_activate` and `zero_native_app_deactivate`.
 - `surfaceChanged` forwards size, display density, and the Android `Surface`, then requests a frame.
 - The native Refresh button calls `nativeCommand("mobile.refresh")`, updates status from `zero_native_app_last_command_count`, and requests a frame.
 - `onTouchEvent` forwards pointer id, phase, position, and pressure.

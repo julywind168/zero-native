@@ -22,6 +22,18 @@ JNIEXPORT void JNICALL Java_dev_zero_1native_examples_android_MainActivity_nativ
     zero_native_app_start((void *)app);
 }
 
+JNIEXPORT void JNICALL Java_dev_zero_1native_examples_android_MainActivity_nativeActivate(JNIEnv *env, jobject self, jlong app) {
+    (void)env;
+    (void)self;
+    zero_native_app_activate((void *)app);
+}
+
+JNIEXPORT void JNICALL Java_dev_zero_1native_examples_android_MainActivity_nativeDeactivate(JNIEnv *env, jobject self, jlong app) {
+    (void)env;
+    (void)self;
+    zero_native_app_deactivate((void *)app);
+}
+
 JNIEXPORT void JNICALL Java_dev_zero_1native_examples_android_MainActivity_nativeStop(JNIEnv *env, jobject self, jlong app) {
     (void)env;
     (void)self;

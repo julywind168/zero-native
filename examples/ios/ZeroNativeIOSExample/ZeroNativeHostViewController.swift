@@ -39,6 +39,16 @@ final class ZeroNativeHostViewController: UIViewController {
         webView.loadHTMLString(Self.html, baseURL: nil)
     }
 
+    func activateNativeApp() {
+        guard let nativeApp else { return }
+        zero_native_app_activate(nativeApp)
+    }
+
+    func deactivateNativeApp() {
+        guard let nativeApp else { return }
+        zero_native_app_deactivate(nativeApp)
+    }
+
     private func configureHeader() {
         headerView.backgroundColor = .secondarySystemBackground
 

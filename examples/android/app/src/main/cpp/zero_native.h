@@ -6,6 +6,8 @@
 void *zero_native_app_create(void);
 void zero_native_app_destroy(void *app);
 void zero_native_app_start(void *app);
+void zero_native_app_activate(void *app);
+void zero_native_app_deactivate(void *app);
 void zero_native_app_stop(void *app);
 void zero_native_app_resize(void *app, float width, float height, float scale, void *surface);
 void zero_native_app_touch(void *app, uint64_t id, int phase, float x, float y, float pressure);

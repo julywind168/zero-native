@@ -93,6 +93,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         nativeStart(nativeApp)
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (nativeApp != 0L) {
+            nativeActivate(nativeApp)
+        }
+    }
+
+    override fun onPause() {
+        if (nativeApp != 0L) {
+            nativeDeactivate(nativeApp)
+        }
+        super.onPause()
+    }
+
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
         nativeResize(nativeApp, width.toFloat(), height.toFloat(), resources.displayMetrics.density, holder.surface)
         nativeFrame(nativeApp)
@@ -122,6 +136,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     external fun nativeCreate(): Long
     external fun nativeDestroy(app: Long)
     external fun nativeStart(app: Long)
+    external fun nativeActivate(app: Long)
+    external fun nativeDeactivate(app: Long)
     external fun nativeStop(app: Long)
     external fun nativeResize(app: Long, width: Float, height: Float, scale: Float, surface: Any)
     external fun nativeTouch(app: Long, id: Long, phase: Int, x: Float, y: Float, pressure: Float)

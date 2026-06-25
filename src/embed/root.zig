@@ -19,6 +19,14 @@ pub const EmbeddedApp = struct {
         try self.runtime.dispatchPlatformEvent(self.app, .app_start);
     }
 
+    pub fn activate(self: *EmbeddedApp) anyerror!void {
+        try self.runtime.dispatchPlatformEvent(self.app, .app_activated);
+    }
+
+    pub fn deactivate(self: *EmbeddedApp) anyerror!void {
+        try self.runtime.dispatchPlatformEvent(self.app, .app_deactivated);
+    }
+
     pub fn resize(self: *EmbeddedApp, surface: platform.Surface) anyerror!void {
         try self.runtime.dispatchPlatformEvent(self.app, .{ .surface_resized = surface });
     }
@@ -45,6 +53,8 @@ const MobileHostApp = struct {
     null_platform: platform.NullPlatform,
     embedded: EmbeddedApp,
     last_error: ?anyerror = null,
+    activation_count: usize = 0,
+    deactivation_count: usize = 0,
     command_count: usize = 0,
     last_command_name: [max_mobile_command_name_bytes + 1]u8 = [_]u8{0} ** (max_mobile_command_name_bytes + 1),
 
@@ -53,6 +63,8 @@ const MobileHostApp = struct {
         const self = try allocator.create(MobileHostApp);
         self.null_platform = platform.NullPlatform.init(.{});
         self.last_error = null;
+        self.activation_count = 0;
+        self.deactivation_count = 0;
         self.command_count = 0;
         self.last_command_name = [_]u8{0} ** (max_mobile_command_name_bytes + 1);
         self.embedded = EmbeddedApp.init(.{
@@ -68,6 +80,11 @@ const MobileHostApp = struct {
         _ = runtime_value;
         const self: *MobileHostApp = @ptrCast(@alignCast(context));
         switch (event) {
+            .lifecycle => |lifecycle| switch (lifecycle) {
+                .activate => self.activation_count += 1,
+                .deactivate => self.deactivation_count += 1,
+                else => {},
+            },
             .command => |command_event| {
                 self.command_count += 1;
                 const count = @min(command_event.name.len, max_mobile_command_name_bytes);
@@ -111,6 +128,16 @@ pub fn zero_native_app_destroy(app: ?*anyopaque) void {
 pub fn zero_native_app_start(app: ?*anyopaque) void {
     const self = mobileApp(app) orelse return;
     self.embedded.start() catch |err| recordError(self, err);
+}
+
+pub fn zero_native_app_activate(app: ?*anyopaque) void {
+    const self = mobileApp(app) orelse return;
+    self.embedded.activate() catch |err| recordError(self, err);
+}
+
+pub fn zero_native_app_deactivate(app: ?*anyopaque) void {
+    const self = mobileApp(app) orelse return;
+    self.embedded.deactivate() catch |err| recordError(self, err);
 }
 
 pub fn zero_native_app_stop(app: ?*anyopaque) void {
@@ -187,6 +214,20 @@ test "embedded app starts and loads source" {
 
     try embedded.start();
     try @import("std").testing.expectEqualStrings("<p>Embedded</p>", null_platform.loaded_source.?.bytes);
+}
+
+test "mobile C ABI forwards activation lifecycle through embedded runtime" {
+    const app = zero_native_app_create() orelse return error.TestUnexpectedResult;
+    defer zero_native_app_destroy(app);
+
+    zero_native_app_start(app);
+    zero_native_app_activate(app);
+    zero_native_app_deactivate(app);
+
+    const self = mobileApp(app).?;
+    try std.testing.expectEqual(@as(usize, 1), self.activation_count);
+    try std.testing.expectEqual(@as(usize, 1), self.deactivation_count);
+    try std.testing.expectEqualStrings("", std.mem.span(zero_native_app_last_error_name(app)));
 }
 
 test "mobile C ABI dispatches native commands through embedded runtime" {

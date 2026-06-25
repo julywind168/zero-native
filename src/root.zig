@@ -93,6 +93,14 @@ pub export fn zero_native_app_start(app: ?*anyopaque) void {
     embed.zero_native_app_start(app);
 }
 
+pub export fn zero_native_app_activate(app: ?*anyopaque) void {
+    embed.zero_native_app_activate(app);
+}
+
+pub export fn zero_native_app_deactivate(app: ?*anyopaque) void {
+    embed.zero_native_app_deactivate(app);
+}
+
 pub export fn zero_native_app_stop(app: ?*anyopaque) void {
     embed.zero_native_app_stop(app);
 }

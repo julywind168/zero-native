@@ -35,6 +35,7 @@ Select a simulator or device and run the `ZeroNativeIOSExample` scheme.
 ## Host lifecycle
 
 - `viewDidLoad` creates and starts the zero-native app.
+- `SceneDelegate` forwards activation and resignation with `zero_native_app_activate` and `zero_native_app_deactivate`.
 - `viewDidLayoutSubviews` forwards the current WebView size and screen scale with `zero_native_app_resize`, then requests a frame.
 - The native Refresh button calls `zero_native_app_command("mobile.refresh")`, updates status from `zero_native_app_last_command_count`, and requests a frame.
 - Controller teardown stops and destroys the app.
