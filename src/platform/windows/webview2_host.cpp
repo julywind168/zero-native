@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <objbase.h>
 #include <commctrl.h>
 
@@ -1384,6 +1385,20 @@ int zero_native_windows_reveal_path(Host *host, const char *path, size_t path_le
     std::wstring args = L"/select,\"" + target + L"\"";
     HINSTANCE result = ShellExecuteW(nullptr, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<intptr_t>(result) > 32 ? 1 : 0;
+}
+
+int zero_native_windows_add_recent_document(Host *host, const char *path, size_t path_len) {
+    (void)host;
+    if (!path || path_len == 0) return 0;
+    std::wstring target = widen(slice(path, path_len));
+    SHAddToRecentDocs(SHARD_PATHW, target.c_str());
+    return 1;
+}
+
+int zero_native_windows_clear_recent_documents(Host *host) {
+    (void)host;
+    SHAddToRecentDocs(SHARD_PIDL, nullptr);
+    return 1;
 }
 
 int zero_native_windows_create_webview(Host *host, uint64_t window_id, const char *label, size_t label_len, const char *url, size_t url_len, double x, double y, double width, double height, int layer, int transparent, int bridge_enabled) {

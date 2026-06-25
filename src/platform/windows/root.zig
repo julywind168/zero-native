@@ -87,6 +87,8 @@ extern fn zero_native_windows_set_webview_layer(host: *WindowsHost, window_id: u
 extern fn zero_native_windows_close_webview(host: *WindowsHost, window_id: u64, label: [*]const u8, label_len: usize) c_int;
 extern fn zero_native_windows_open_external_url(host: *WindowsHost, url: [*]const u8, url_len: usize) c_int;
 extern fn zero_native_windows_reveal_path(host: *WindowsHost, path: [*]const u8, path_len: usize) c_int;
+extern fn zero_native_windows_add_recent_document(host: *WindowsHost, path: [*]const u8, path_len: usize) c_int;
+extern fn zero_native_windows_clear_recent_documents(host: *WindowsHost) c_int;
 extern fn zero_native_windows_clipboard_read(host: *WindowsHost, buffer: [*]u8, buffer_len: usize) usize;
 extern fn zero_native_windows_clipboard_write(host: *WindowsHost, text: [*]const u8, text_len: usize) void;
 
@@ -158,6 +160,8 @@ pub const WindowsPlatform = struct {
                 .close_webview_fn = closeWebView,
                 .open_external_url_fn = openExternalUrl,
                 .reveal_path_fn = revealPath,
+                .add_recent_document_fn = addRecentDocument,
+                .clear_recent_documents_fn = clearRecentDocuments,
                 .configure_security_policy_fn = configureSecurityPolicy,
                 .configure_shortcuts_fn = configureShortcuts,
                 .emit_window_event_fn = emitWindowEvent,
@@ -481,6 +485,18 @@ fn revealPath(context: ?*anyopaque, path: []const u8) anyerror!void {
     const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
     if (self.web_engine != .system) return error.UnsupportedService;
     if (zero_native_windows_reveal_path(self.host, path.ptr, path.len) == 0) return error.UnsupportedService;
+}
+
+fn addRecentDocument(context: ?*anyopaque, path: []const u8) anyerror!void {
+    const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
+    if (self.web_engine != .system) return error.UnsupportedService;
+    if (zero_native_windows_add_recent_document(self.host, path.ptr, path.len) == 0) return error.UnsupportedService;
+}
+
+fn clearRecentDocuments(context: ?*anyopaque) anyerror!void {
+    const self: *WindowsPlatform = @ptrCast(@alignCast(context.?));
+    if (self.web_engine != .system) return error.UnsupportedService;
+    if (zero_native_windows_clear_recent_documents(self.host) == 0) return error.UnsupportedService;
 }
 
 fn configureSecurityPolicy(context: ?*anyopaque, policy: security.Policy) anyerror!void {
