@@ -3,6 +3,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "quick-start": "Quick Start",
   "app-model": "App Model",
   frontend: "Frontend Projects",
+  "native-surfaces": "Native Surfaces",
   windows: "Windows",
   webviews: "Multiple WebViews",
   "keyboard-shortcuts": "Keyboard Shortcuts",

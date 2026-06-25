@@ -16,6 +16,7 @@ export const navSections: NavSection[] = [
       { name: "Quick Start", href: "/quick-start" },
       { name: "App Model", href: "/app-model" },
       { name: "Frontend Projects", href: "/frontend" },
+      { name: "Native Surfaces", href: "/native-surfaces" },
     ],
   },
   {
