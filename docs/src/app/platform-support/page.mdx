@@ -42,7 +42,7 @@ JavaScript can query the same support model through the built-in bridge when `js
 const hasTray = await window.zero.platform.supports("tray");
 ```
 
-Feature names match the Zig `PlatformFeature` enum and the TypeScript `ZeroNativePlatformFeature` union. Unsupported operations still reject explicitly if called; support checks are intended for choosing UI affordances before making those calls.
+Feature names match the Zig `PlatformFeature` enum and the TypeScript `ZeroNativePlatformFeature` union. JavaScript callers may use either snake_case names such as `native_views` or camelCase aliases such as `nativeViews`. Unsupported operations still reject explicitly if called; support checks are intended for choosing UI affordances before making those calls.
 
 ## Native Surfaces
 

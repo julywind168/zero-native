@@ -252,22 +252,33 @@ export type ZeroNativeCommandSource =
 
 export type ZeroNativePlatformFeature =
   | "main_webview"
+  | "mainWebView"
   | "child_webviews"
+  | "childWebViews"
   | "native_views"
+  | "nativeViews"
   | "native_control_commands"
+  | "nativeControlCommands"
   | "menus"
   | "tray"
   | "shortcuts"
   | "dialogs"
   | "clipboard_text"
+  | "clipboardText"
   | "clipboard_rich_data"
+  | "clipboardRichData"
   | "open_url"
+  | "openUrl"
   | "reveal_path"
+  | "revealPath"
   | "notifications"
   | "recent_documents"
+  | "recentDocuments"
   | "credentials"
   | "file_drops"
-  | "app_activation_events";
+  | "fileDrops"
+  | "app_activation_events"
+  | "appActivationEvents";
 
 export type ZeroNativePlatformFeatureSelector =
   | { feature: ZeroNativePlatformFeature; name?: never }
